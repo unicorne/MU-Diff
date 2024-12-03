@@ -7,7 +7,7 @@ Synthesizing brain MRI lesions poses significant challenges due to the heterogen
 
 **MU-Diff Architecture**  <br />
 
-![alt text](figures/architecture_diagram.jpg)
+![alt text](figures/mudiff_architecture.jpg)
 
 **Instalaltion Guide**  <br />
 Prepare an environment with python>=3.8 and install dependencies
