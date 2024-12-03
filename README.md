@@ -9,8 +9,12 @@ Synthesizing brain MRI lesions poses significant challenges due to the heterogen
 
 ![alt text](figures/mudiff_architecture.jpg)
 
-**Instalaltion Guide**  <br />
+**Installation Guide**  <br />
 Prepare an environment with python>=3.8 and install dependencies
 ```
 pip install -r requirements.txt
 ```
+**Data Preparation**  <br />
+The experiments are conducted on two publicly available datasets,
+  * BraTS2019 Dataset : [https://www.isles-challenge.org/ISLES2015/](https://www.med.upenn.edu/cbica/brats2019/data.html)
+  * ISLES2015 Dataset : [https://www.isles-challenge.org/ISLES2015/](https://www.isles-challenge.org/ISLES2015/)
