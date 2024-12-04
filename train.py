@@ -231,12 +231,10 @@ def uncer_loss(mean, var, label):
 
 # %%
 def train_syndiff(rank, gpu, args):
-    from backbones.discriminator import Discriminator_small, Discriminator_large
+    from backbones.discriminator import Discriminator_large
 
     from backbones.ncsnpp_generator_adagn_feat import NCSNpp
     from backbones.ncsnpp_generator_adagn_feat import NCSNpp_adaptive
-
-    import backbones.generator_resnet
 
     from utils.EMA import EMA
 
@@ -251,10 +249,8 @@ def train_syndiff(rank, gpu, args):
 
     nz = args.nz  # latent dimension
 
-    dataset = CreateDatasetSynthesis(phase="train", input_path=args.input_path, contrast1=args.contrast1,
-                                     contrast2=args.contrast2)
-    dataset_val = CreateDatasetSynthesis(phase="val", input_path=args.input_path, contrast1=args.contrast1,
-                                         contrast2=args.contrast2)
+    dataset = CreateDatasetSynthesis(phase="train", input_path=args.input_path)
+    dataset_val = CreateDatasetSynthesis(phase="val", input_path=args.input_path)
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(dataset,
                                                                     num_replicas=args.world_size,
@@ -266,30 +262,29 @@ def train_syndiff(rank, gpu, args):
                                               pin_memory=True,
                                               sampler=train_sampler,
                                               drop_last=True)
-    # val_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,
-    #                                                               num_replicas=args.world_size,
-    #                                                               rank=rank)
-    # data_loader_val = torch.utils.data.DataLoader(dataset_val,
-    #                                               batch_size=batch_size,
-    #                                               shuffle=False,
-    #                                               num_workers=4,
-    #                                               pin_memory=True,
-    #                                               sampler=val_sampler,
-    #                                               drop_last=True)
+    val_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,
+                                                                  num_replicas=args.world_size,
+                                                                  rank=rank)
+    data_loader_val = torch.utils.data.DataLoader(dataset_val,
+                                                  batch_size=batch_size,
+                                                  shuffle=False,
+                                                  num_workers=4,
+                                                  pin_memory=True,
+                                                  sampler=val_sampler,
+                                                  drop_last=True)
 
-    # val_l1_loss = np.zeros([2, args.num_epoch, len(data_loader_val)])
-    # val_psnr_values = np.zeros([2, args.num_epoch, len(data_loader_val)])
+    val_l1_loss = np.zeros([2, args.num_epoch, len(data_loader_val)])
+    val_psnr_values = np.zeros([2, args.num_epoch, len(data_loader_val)])
     print('train data size:' + str(len(data_loader)))
-    # print('val data size:' + str(len(data_loader_val)))
+    print('val data size:' + str(len(data_loader_val)))
     to_range_0_1 = lambda x: (x + 1.) / 2.
     critic_criterian = nn.BCEWithLogitsLoss(reduction='none')
-    kl_loss = nn.KLDivLoss(reduction='mean')
+
 
     # networks performing reverse denoising
     gen_diffusive_1 = NCSNpp(args).to(device)
     gen_diffusive_2 = NCSNpp_adaptive(args).to(device)
-    
-    # networks performing translation
+
     args.num_channels = 1
     att_conv = conv2d(64 * 8, 1, 1, padding=0).cuda()
 
@@ -329,6 +324,8 @@ def train_syndiff(rank, gpu, args):
 
     exp = args.exp
     output_path = '/data/shew0029/MedSyn/VQGAN_3D/SynDiff-multi/SynDiff-main/results'
+
+    # output_path = args.output_path
 
     exp_path = os.path.join(output_path, exp)
     if rank == 0:
@@ -381,7 +378,6 @@ def train_syndiff(rank, gpu, args):
             cond_data1 = x1.to(device, non_blocking=True)
             cond_data2 = x2.to(device, non_blocking=True)
             cond_data3 = x3.to(device, non_blocking=True)
-            # cond_mask = x3.to(device, non_blocking=True)
             real_data = x4.to(device, non_blocking=True)
 
             t2 = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
@@ -521,9 +517,8 @@ def train_syndiff(rank, gpu, args):
 
             errG_L1 = errG1_2_L1 + errG2_2_L1
 
-            # errG = (args.lambda_l1_loss * errG_L1)
             errG = errG_adv + (args.lambda_l1_loss * errG_L1)  + ( args.lambda_mask_loss * mask_loss)
-            # errG = errG_adv + (args.lambda_l1_loss * errG_L1)  
+
             errG.backward()
             optimizer_gen_diffusive_1.step()
             optimizer_gen_diffusive_2.step()
@@ -534,8 +529,7 @@ def train_syndiff(rank, gpu, args):
                     print('epoch {} iteration{},  G-Adv: {}, G-Sum: {}'.format(epoch, iteration,
                                                                                errG_adv.item(), errG.item()))
 
-                    # print('epoch {} iteration{},  G-Adv: {}, G-Sum: {}'.format(epoch, iteration,
-                    #                                                            errG.item(), errG.item()))
+
 
         if not args.no_lr_decay:
             scheduler_gen_diffusive_1.step()
@@ -553,15 +547,14 @@ def train_syndiff(rank, gpu, args):
                                              normalize=True)
             # concatenate noise and source contrast
             x2_t = torch.randn_like(real_data)
-            fake_sample1 = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1, gen_diffusive_2, cond_data2,
+            fake_sample = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1, gen_diffusive_2, cond_data2,
                                              cond_data3,
                                              args.num_timesteps, x2_t, T, args)
-            # fake_sample2 = sample_from_model(pos_coeff, gen_diffusive_2, cond_data2, args.num_timesteps,
-            #                                  x2_t, T, args)
-            fake_sample1 = torch.cat((real_data, fake_sample1), axis=-1)
-            # fake_sample2 = torch.cat((real_data, fake_sample2), axis=-1)
-            torchvision.utils.save_image(fake_sample1,
-                                         os.path.join(exp_path, 'sample1_discrete_epoch_{}.png'.format(epoch)),
+
+            fake_sample = torch.cat((real_data, fake_sample), axis=-1)
+
+            torchvision.utils.save_image(fake_sample,
+                                         os.path.join(exp_path, 'sample_discrete_epoch_{}.png'.format(epoch)),
                                          normalize=True)
           
 
@@ -594,46 +587,35 @@ def train_syndiff(rank, gpu, args):
                     optimizer_gen_diffusive_1.swap_parameters_with_ema(store_params_in_ema=True)
                     optimizer_gen_diffusive_2.swap_parameters_with_ema(store_params_in_ema=True)
 
-        # for iteration, (x_val , y_val) in enumerate(data_loader_val):
-        #
-        #     real_data = x_val.to(device, non_blocking=True)
-        #     source_data = y_val.to(device, non_blocking=True)
-        #
-        #     x1_t = torch.cat((torch.randn_like(real_data),source_data),axis=1)
-        #     #diffusion steps
-        #     fake_sample1 = sample_from_model(pos_coeff, gen_diffusive_1, args.num_timesteps, x1_t, T, args)
-        #     fake_sample1 = to_range_0_1(fake_sample1) ; fake_sample1 = fake_sample1/fake_sample1.mean()
-        #     real_data = to_range_0_1(real_data) ; real_data = real_data/real_data.mean()
-        #
-        #     fake_sample1=fake_sample1.cpu().numpy()
-        #     real_data=real_data.cpu().numpy()
-        #     val_l1_loss[0,epoch,iteration]=abs(fake_sample1 -real_data).mean()
-        #
-        #     val_psnr_values[0,epoch, iteration] = psnr(real_data,fake_sample1, data_range=real_data.max())
-        #
-        # for iteration, (y_val , x_val) in enumerate(data_loader_val):
-        #
-        #     real_data = x_val.to(device, non_blocking=True)
-        #     source_data = y_val.to(device, non_blocking=True)
-        #
-        #     x1_t = torch.cat((torch.randn_like(real_data),source_data),axis=1)
-        #     #diffusion steps
-        #     fake_sample1 = sample_from_model(pos_coeff, gen_diffusive_1, args.num_timesteps, x1_t, T, args)
-        #
-        #
-        #     fake_sample1 = to_range_0_1(fake_sample1) ; fake_sample1 = fake_sample1/fake_sample1.mean()
-        #     real_data = to_range_0_1(real_data) ; real_data = real_data/real_data.mean()
-        #
-        #     fake_sample1=fake_sample1.cpu().numpy()
-        #     real_data=real_data.cpu().numpy()
-        #     val_l1_loss[1,epoch,iteration]=abs(fake_sample1 -real_data).mean()
-        #
-        #     val_psnr_values[1,epoch, iteration] = psnr(real_data,fake_sample1, data_range=real_data.max())
-        #
-        # print(np.nanmean(val_psnr_values[0,epoch,:]))
-        # print(np.nanmean(val_psnr_values[1,epoch,:]))
-        # np.save('{}/val_l1_loss.npy'.format(exp_path), val_l1_loss)
-        # np.save('{}/val_psnr_values.npy'.format(exp_path), val_psnr_values)
+        for iteration, (x1_val, x2_val, x3_val, x4_val) in enumerate(data_loader_val):
+            cond_data1_val = x1_val.to(device, non_blocking=True)
+            cond_data2_val = x2_val.to(device, non_blocking=True)
+            cond_data3_val = x3_val.to(device, non_blocking=True)
+            real_data_val = x4_val.to(device, non_blocking=True)
+
+
+            x_t = torch.randn_like(real_data)
+
+            fake_sample_val = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1_val, gen_diffusive_2, cond_data2_val,
+                                            cond_data3_val,
+                                            args.num_timesteps, x_t, T, args)
+
+
+            #diffusion steps
+            fake_sample_val = to_range_0_1(fake_sample_val) ; fake_sample_val = fake_sample_val/fake_sample_val.mean()
+            real_data_val = to_range_0_1(real_data_val) ; real_data_val = real_data_val/real_data_val.mean()
+
+            fake_sample_val=fake_sample_val.cpu().numpy()
+            real_data_val=real_data_val.cpu().numpy()
+            val_l1_loss[0,epoch,iteration]=abs(fake_sample_val -real_data_val).mean()
+
+            val_psnr_values[0,epoch, iteration] = psnr(real_data,fake_sample_val, data_range=real_data_val.max())
+
+
+
+        print(np.nanmean(val_psnr_values[0,epoch,:]))
+        np.save('{}/val_l1_loss.npy'.format(exp_path), val_l1_loss)
+        np.save('{}/val_psnr_values.npy'.format(exp_path), val_psnr_values)
 
 
 def init_processes(rank, size, fn, args):
