@@ -45,7 +45,7 @@ data/
 ```
 
 **Figshare Project Space**  <br />
-All the pre-trained model weights and evaluations are included in this project page.
+All the pre-trained model weights, generated brain masks and evaluations are included in this project page.
 
 **Train Model**  <br />
 To train the model on the brats dataset.
@@ -68,6 +68,10 @@ To reproduce the results using the pre-trained weights, follow the order of cont
 ```
 python test.py --image_size 256 --exp exp_brats --num_channels 1 --num_channels_dae 64 --ch_mult 1 2 4 --num_timesteps 4 --num_res_blocks 2 --batch_size 1 --embedding_type positional  --z_emb_dim 256  --gpu_chose 0 --input_path '/data/BRATS' --output_path '/results'
 ```
-
+**Evaluation of Synthetic Results**  <br />
+During the testing phase, save each synthesized and group truth contrast in separate folders and use their folder paths to execute metric_calc.py to evaluate the results quantitatively.
+```
+python metric_calc.py
+```
 **Acknowledgements**  <br />
 This repository makes liberal use of code from [Tackling the Generative Learning Trilemma](https://github.com/NVlabs/denoising-diffusion-gan) and [SynDiff](https://github.com/icon-lab/SynDiff)
