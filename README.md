@@ -60,7 +60,8 @@ To train the model on ISLES dataset, use the same cmd, update the experiment nam
 The order of the contrasts in the dataset_brats.py and dataset_isles.py as [cond_contrast1, cond_contrast2, cond_contrast3, target_contrast ]
 To reproduce the results using the pre-trained weights, follow the order of contrast loading in datasets.
 
-BRATS : [Flair,T2,T1,**T1ce**], [T1ce,T1,T2,**Flair**], [T1ce,T1,Flair,**T2**],  [Flair,T1ce,T2,**T1**]
+BRATS : [Flair,T2,T1,**T1ce**], [T1ce,T1,T2,**Flair**], [T1ce,T1,Flair,**T2**],  [Flair,T1ce,T2,**T1**]<br /> 
+
 ISLES : [T1,T2,DWI,**Flair**], [T2,DWI,Flair,**T1**]
 
 **Test Model**  <br />
