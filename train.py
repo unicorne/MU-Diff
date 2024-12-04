@@ -6,7 +6,7 @@ import os
 
 from backbones.dense_layer import conv2d
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,3,2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
 import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
