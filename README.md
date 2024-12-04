@@ -19,7 +19,27 @@ The experiments are conducted on two publicly available datasets,
   * BraTS2019 Dataset : [https://www.med.upenn.edu/cbica/brats2019/data.html](https://www.med.upenn.edu/cbica/brats2019/data.html)
   * ISLES2015 Dataset : [https://www.isles-challenge.org/ISLES2015/](https://www.isles-challenge.org/ISLES2015/)
 
-The data split of each dataset is listed in the [data](data) folder. Sperate each MRI contrast into folders and run pre_process.py to normalize data and extract middle axial slices from nifty files. This will save the extracted 2D slices from each contrast as [contrast_name].npy files. 
+The data split of each dataset is listed in the [data](data) folder. Sperate each MRI contrast into folders and run pre_process.py to normalize data and extract middle axial slices from nifty files. 
 ```
 python pre_process.py
+```
+This will save the extracted 2D slices from each contrast as [contrast_name].npy.  Then, save the .npy data as in the following structure.
+```
+data/
+├── BRATS/
+│   ├── train/
+│   │   ├── T1.npy
+│   │   └── T2.npy
+│   │   └── FLAIR.npy
+│   │   └── T1ce.npy
+│   ├── test/
+│   │   ├── T1.npy
+│   │   └── T2.npy
+│   │   └── FLAIR.npy
+│   │   └── T1ce.npy
+│   ├── val/
+│   │   ├── T1.npy
+│   │   └── T2.npy
+│   │   └── FLAIR.npy
+│   │   └── T1ce.npy
 ```
