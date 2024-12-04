@@ -44,8 +44,14 @@ data/
 │   │   └── T1ce.npy
 ```
 
-**Figshare Project Space**  <br />
-All the pre-trained model weights, generated brain masks and evaluations are included in this project page.
+**Figshare Project**  <br />
+All the pre-trained model weights, generated brain masks and evaluations are included in this project page. [add link]
+
+**Model Weights** <br />
+Download trained models from [to be added]
+
+**Demo** <br />
+The demonstration is created on synthesising T1ce contrast on the BraTS dataset. You can run the given Python notebook in the demo folder by using the sample test data provided. You can also update the model weights and try different synthesis tasks.
 
 **Train Model**  <br />
 To train the model on the brats dataset.
