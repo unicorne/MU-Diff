@@ -18,3 +18,9 @@ pip install -r requirements.txt
 The experiments are conducted on two publicly available datasets,
   * BraTS2019 Dataset : [https://www.med.upenn.edu/cbica/brats2019/data.html](https://www.med.upenn.edu/cbica/brats2019/data.html)
   * ISLES2015 Dataset : [https://www.isles-challenge.org/ISLES2015/](https://www.isles-challenge.org/ISLES2015/)
+
+Pre-process nifti files to normalize data and extract middle axial slices. The data split of each dataset is listed in the [data](data) folder
+
+```
+python pre_process.py
+```
