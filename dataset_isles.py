@@ -1,21 +1,22 @@
 import torch.utils.data
 import numpy as np
 
-#This particular setting of dataset will use flair, t2 and t1 contrasts as conditional contrasts
-# to synthesize the t1ce as the target contrast. Change the order of the contrasts to train model
+#This particular setting of dataset will use t1, t2 and dwi contrasts as conditional contrasts
+# to synthesize the flair as the target contrast. Change the order of the contrasts to train model
 # on different contrast synthesis. Makes sure same dataloader (with same contrast order) is used during
 # the training and testing of each contrast synthesis.
+
 def CreateDatasetSynthesis(phase, input_path):
-    cond_data1 = input_path + phase + "/flair.npy"
+    cond_data1 = input_path + phase + "/t1.npy"
     data_fs_s1 = LoadDataSet(cond_data1)
 
     cond_data2 = input_path + phase + "/t2.npy"
     data_fs_s2 = LoadDataSet(cond_data2)
 
-    cond_data3 = input_path + phase + "/t1.npy"
+    cond_data3 = input_path + phase + "/dwi.npy"
     data_fs_s3 = LoadDataSet(cond_data3)
 
-    target_data = input_path + phase + "/t1ce.npy"
+    target_data = input_path + phase + "/flair.npy"
     data_fs_s4 = LoadDataSet(target_data)
 
     dataset = torch.utils.data.TensorDataset( torch.from_numpy(data_fs_s1), torch.from_numpy(data_fs_s2), torch.from_numpy(data_fs_s3), torch.from_numpy(data_fs_s4))
