@@ -14,7 +14,7 @@ Prepare an environment with python>=3.8 and install dependencies
 ```
 pip install -r requirements.txt
 ```
-**Data Preparation**  <br />
+**Dataset Preparation**  <br />
 The experiments are conducted on two publicly available datasets,
   * BraTS2019 Dataset : [https://www.med.upenn.edu/cbica/brats2019/data.html](https://www.med.upenn.edu/cbica/brats2019/data.html)
   * ISLES2015 Dataset : [https://www.isles-challenge.org/ISLES2015/](https://www.isles-challenge.org/ISLES2015/)
@@ -43,3 +43,17 @@ data/
 │   │   └── FLAIR.npy
 │   │   └── T1ce.npy
 ```
+
+**Figshare Project Space**  <br />
+All the pre-trained model weights and evaluations are included in this project page.
+
+**Train Model**  <br />
+To train the model on the brats dataset.
+```
+python train_.py --image_size 256 --exp exp_brats --num_channels 1 --num_channels_dae 64 --ch_mult 1 2 4 --num_timesteps 2 --num_res_blocks 2 --batch_size 1 --num_epoch 30 --ngf 64 --embedding_type positional --ema_decay 0.999 --r1_gamma 1. --z_emb_dim 256 --lr_d 1e-4 --lr_g 1.6e-4 --lazy_reg 10 --num_process_per_node 3
+
+To train the model on ISLES dataset, use the same cmd, update the experiment name (--exp) and update the dataset script used within the train.py  (use dataset_isles.py)
+```
+
+**Hyperparameter Setting and Experimental Results.**  <br />
+![alt text](figures/hyperparams.jpg)
