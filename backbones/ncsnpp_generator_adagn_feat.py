@@ -485,8 +485,6 @@ class NCSNpp_adaptive(nn.Module):
         modules = []
         # timestep/noise_level embedding; only for continuous training
         if embedding_type == 'fourier':
-            # Gaussian Fourier features embeddings.
-            # assert config.training.continuous, "Fourier features are only used for continuous training."
 
             modules.append(layerspp.GaussianFourierProjection(
                 embedding_size=nf, scale=config.fourier_scale
@@ -578,18 +576,10 @@ class NCSNpp_adaptive(nn.Module):
             input_pyramid_ch = channels
 
         modules.append(ConvBlock_GAP(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock(in_ch=channels, out_ch=nf))
-
-               
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
 
         hs_c = [nf*4]
 
@@ -743,9 +733,6 @@ class NCSNpp_adaptive(nn.Module):
         pseudo_weight = modules[m_idx](pseudo_target)
         m_idx += 1
 
-        # pseudo_feat = modules[m_idx](pseudo_target)
-        # m_idx += 1
-
         x_feat = modules[m_idx](x)
         m_idx += 1
 
@@ -778,19 +765,6 @@ class NCSNpp_adaptive(nn.Module):
         #cond3 and cond1
         cond3_att = self.feat_weight_c3(all_feat_att_1_c31*cond3_feat)
         fused_cond31 = (all_feat_att_2_c31*cond3_att) + ((1-all_feat_att_2_c31)*cond1_feat)
-       
-        # adap_w_c1 = torch.sigmoid(self.feat_weight_c1(torch.cat(( (cond1_feat+cond2_feat+cond3_feat),cond1_feat ), axis=1)))
-        # adap_w_c2 = torch.sigmoid(self.feat_weight_c2(torch.cat(( (cond1_feat+cond2_feat+cond3_feat),cond2_feat ), axis=1)))
-        # adap_w_c3 = torch.sigmoid(self.feat_weight_c3(torch.cat(( (cond1_feat+cond2_feat+cond3_feat),cond3_feat ), axis=1)))
-
-       
-
-        # cond1_feat = (cond1_feat*adap_w_c1) + cond1_feat
-        # cond2_feat = (cond2_feat * adap_w_c2) + cond2_feat
-        # cond3_feat = (cond3_feat * adap_w_c3) + cond3_feat
-
-
-        # hs = [torch.cat((x_feat, cond1_feat, cond2_feat, cond3_feat), axis=1)]
    
 
         hs = [torch.cat((x_feat, fused_cond12, fused_cond23, fused_cond31), axis=1)]
