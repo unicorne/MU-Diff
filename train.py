@@ -6,7 +6,7 @@ import os
 
 from backbones.dense_layer import conv2d
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,3,2"
 import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
@@ -215,7 +215,7 @@ def sample_from_model(coefficients, generator1, cond1, generator2, cond2, cond3,
             latent_z = torch.randn(x.size(0), opt.nz, device=x.device)  # .to(x.device)
             x_0_1 = generator1(x, cond1, cond2, cond3, t_time, latent_z)
             x_0_2 = generator2(x, cond1, cond2, cond3, t_time, latent_z, x_0_1[:, [0], :])
-           
+
             x_new = sample_posterior_combine(coefficients, x_0_1[:, [0], :], x_0_2[:, [0], :], x, t)
             x = x_new.detach()
 
@@ -280,14 +280,12 @@ def train_syndiff(rank, gpu, args):
     to_range_0_1 = lambda x: (x + 1.) / 2.
     critic_criterian = nn.BCEWithLogitsLoss(reduction='none')
 
-
     # networks performing reverse denoising
     gen_diffusive_1 = NCSNpp(args).to(device)
     gen_diffusive_2 = NCSNpp_adaptive(args).to(device)
 
     args.num_channels = 1
     att_conv = conv2d(64 * 8, 1, 1, padding=0).cuda()
-
 
     disc_diffusive_2 = Discriminator_large(nc=2, ngf=args.ngf,
                                            t_emb_dim=args.t_emb_dim,
@@ -422,11 +420,9 @@ def train_syndiff(rank, gpu, args):
 
             x2_0_predict_diff_g1 = gen_diffusive_1(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2)
 
-            
             x2_0_predict_diff_g2 = gen_diffusive_2(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2,
                                                    x2_0_predict_diff_g1[:, [0], :])
 
-           
             x2_pos_sample_g1 = sample_posterior(pos_coeff, x2_0_predict_diff_g1[:, [0], :], x2_tp1, t2)
 
             x2_pos_sample_g2 = sample_posterior(pos_coeff, x2_0_predict_diff_g2[:, [0], :], x2_tp1, t2)
@@ -444,8 +440,6 @@ def train_syndiff(rank, gpu, args):
             errD_fake2 = errD2_fake2_g1 + errD2_fake2_g2
             errD_fake2.backward()
 
-          
-
             optimizer_disc_diffusive_2.step()
 
             for p in disc_diffusive_2.parameters():
@@ -458,27 +452,18 @@ def train_syndiff(rank, gpu, args):
 
             gen_diffusive_1.zero_grad()
             gen_diffusive_2.zero_grad()
-          
 
-           
             t2 = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
 
             # sample x_t and x_tp1
             x2_t, x2_tp1 = q_sample_pairs(coeff, real_data, t2)
 
-    
             latent_z2 = torch.randn(batch_size, nz, device=device)
 
-           
             x2_0_predict_diff_g1 = gen_diffusive_1(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2)
 
-
-           
             x2_0_predict_diff_g2 = gen_diffusive_2(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2,
                                                    x2_0_predict_diff_g1[:, [0], :])
-
-           
-
 
             # sampling q(x_t | x_0_predict, x_t+1)
             x2_pos_sample_g1 = sample_posterior(pos_coeff, x2_0_predict_diff_g1[:, [0], :], x2_tp1, t2)
@@ -487,7 +472,6 @@ def train_syndiff(rank, gpu, args):
 
             # D output for fake sample x_pos_sample
             output2_g1, att_feat_g1 = disc_diffusive_2(x2_pos_sample_g1, t2, x2_tp1.detach())
-
 
             output2_g2, att_feat_g2 = disc_diffusive_2(x2_pos_sample_g2, t2, x2_tp1.detach())
 
@@ -501,7 +485,6 @@ def train_syndiff(rank, gpu, args):
             mask_loss_2 = (att_map_g1 * critic_criterian(x2_pos_sample_g2, torch.sigmoid(x2_pos_sample_g1))).mean()
 
             mask_loss = mask_loss_1 + mask_loss_2
-           
 
             errG2 = F.softplus(-output2_g1)
             errG2 = errG2.mean()
@@ -517,7 +500,7 @@ def train_syndiff(rank, gpu, args):
 
             errG_L1 = errG1_2_L1 + errG2_2_L1
 
-            errG = errG_adv + (args.lambda_l1_loss * errG_L1)  + ( args.lambda_mask_loss * mask_loss)
+            errG = errG_adv + (args.lambda_l1_loss * errG_L1) + (args.lambda_mask_loss * mask_loss)
 
             errG.backward()
             optimizer_gen_diffusive_1.step()
@@ -528,8 +511,6 @@ def train_syndiff(rank, gpu, args):
                 if rank == 0:
                     print('epoch {} iteration{},  G-Adv: {}, G-Sum: {}'.format(epoch, iteration,
                                                                                errG_adv.item(), errG.item()))
-
-
 
         if not args.no_lr_decay:
             scheduler_gen_diffusive_1.step()
@@ -548,15 +529,14 @@ def train_syndiff(rank, gpu, args):
             # concatenate noise and source contrast
             x2_t = torch.randn_like(real_data)
             fake_sample = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1, gen_diffusive_2, cond_data2,
-                                             cond_data3,
-                                             args.num_timesteps, x2_t, T, args)
+                                            cond_data3,
+                                            args.num_timesteps, x2_t, T, args)
 
             fake_sample = torch.cat((real_data, fake_sample), axis=-1)
 
             torchvision.utils.save_image(fake_sample,
                                          os.path.join(exp_path, 'sample_discrete_epoch_{}.png'.format(epoch)),
                                          normalize=True)
-          
 
             if args.save_content:
                 if epoch % args.save_content_every == 0:
@@ -593,27 +573,26 @@ def train_syndiff(rank, gpu, args):
             cond_data3_val = x3_val.to(device, non_blocking=True)
             real_data_val = x4_val.to(device, non_blocking=True)
 
-
             x_t = torch.randn_like(real_data)
 
-            fake_sample_val = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1_val, gen_diffusive_2, cond_data2_val,
-                                            cond_data3_val,
-                                            args.num_timesteps, x_t, T, args)
+            fake_sample_val = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1_val, gen_diffusive_2,
+                                                cond_data2_val,
+                                                cond_data3_val,
+                                                args.num_timesteps, x_t, T, args)
 
+            # diffusion steps
+            fake_sample_val = to_range_0_1(fake_sample_val);
+            fake_sample_val = fake_sample_val / fake_sample_val.mean()
+            real_data_val = to_range_0_1(real_data_val);
+            real_data_val = real_data_val / real_data_val.mean()
 
-            #diffusion steps
-            fake_sample_val = to_range_0_1(fake_sample_val) ; fake_sample_val = fake_sample_val/fake_sample_val.mean()
-            real_data_val = to_range_0_1(real_data_val) ; real_data_val = real_data_val/real_data_val.mean()
+            fake_sample_val = fake_sample_val.cpu().numpy()
+            real_data_val = real_data_val.cpu().numpy()
+            val_l1_loss[0, epoch, iteration] = abs(fake_sample_val - real_data_val).mean()
 
-            fake_sample_val=fake_sample_val.cpu().numpy()
-            real_data_val=real_data_val.cpu().numpy()
-            val_l1_loss[0,epoch,iteration]=abs(fake_sample_val -real_data_val).mean()
+            val_psnr_values[0, epoch, iteration] = psnr(real_data_val, fake_sample_val, data_range=real_data_val.max())
 
-            val_psnr_values[0,epoch, iteration] = psnr(real_data,fake_sample_val, data_range=real_data_val.max())
-
-
-
-        print(np.nanmean(val_psnr_values[0,epoch,:]))
+        print(np.nanmean(val_psnr_values[0, epoch, :]))
         np.save('{}/val_l1_loss.npy'.format(exp_path), val_l1_loss)
         np.save('{}/val_psnr_values.npy'.format(exp_path), val_psnr_values)
 
