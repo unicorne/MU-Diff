@@ -14,7 +14,7 @@ import torch.optim as optim
 import torchvision
 
 import torchvision.transforms as transforms
-from dataset import CreateDatasetSynthesis
+from dataset_brats import CreateDatasetSynthesis
 
 from torch.multiprocessing import Process
 import torch.distributed as dist
