@@ -577,18 +577,10 @@ class NCSNpp_adaptive(nn.Module):
             input_pyramid_ch = channels
 
         modules.append(ConvBlock_GAP(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock(in_ch=channels, out_ch=nf))
         modules.append(ConvBlock(in_ch=channels, out_ch=nf))
    
-
-               
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
-        # modules.append(ConvBlock_Feat(in_ch=channels, out_ch=nf))
 
         hs_c = [nf*2]
 
@@ -757,18 +749,10 @@ class NCSNpp_adaptive(nn.Module):
         all_feat_att_1_c12 =  torch.sigmoid(self.feat_att1_c12(torch.cat(( cond1_feat,cond2_feat ), axis=1)))
         all_feat_att_2_c12 =  torch.sigmoid(self.feat_att2_c12(torch.cat(( cond1_feat,cond2_feat ), axis=1)))
 
-        # all_feat_att_1_c21 =  torch.sigmoid(self.feat_att1_c21(torch.cat(( cond1_feat,cond2_feat ), axis=1)))
-        # all_feat_att_2_c21 =  torch.sigmoid(self.feat_att2_c21(torch.cat(( cond1_feat,cond2_feat ), axis=1)))
-
         
         #cond1 and cond2
         cond1_att = self.feat_weight_c1(all_feat_att_1_c12*cond1_feat)
         fused_cond12 = (all_feat_att_2_c12*cond1_att) + ((1-all_feat_att_2_c12)*cond2_feat)
-
-        # cond2_att = self.feat_weight_c2(all_feat_att_1_c21*cond2_feat)
-        # fused_cond21 = (all_feat_att_2_c21*cond2_att) + ((1-all_feat_att_2_c21)*cond1_feat)
-    
-
     
    
 
