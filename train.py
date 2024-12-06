@@ -6,14 +6,11 @@ import os
 
 from backbones.dense_layer import conv2d
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
-import torch.autograd as autograd
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
-
-import torchvision.transforms as transforms
 from dataset_brats import CreateDatasetSynthesis
 
 from torch.multiprocessing import Process
