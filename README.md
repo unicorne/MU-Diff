@@ -45,7 +45,7 @@ data/
 ```
 
 **Figshare Project**  <br />
-All the pre-trained model weights, generated brain masks and evaluations are included in this [project page]((https://figshare.com/account/home#/projects/230277)
+All the pre-trained model weights, generated brain masks and evaluations are included in this [project page](https://figshare.com/account/home#/projects/230277)
 
 **Model Weights** <br />
 Download trained models from [project page](https://figshare.com/account/home#/projects/230277)
