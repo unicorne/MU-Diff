@@ -12,7 +12,7 @@ Synthesizing brain MRI lesions poses significant challenges due to the heterogen
 **System Requirement**  <br />
 All the experiments of MU-Diff are conducted on Ubuntu 20.04 Focal version with Python 3.8.
 
-To train Co-BioNet with the given settings, the system requires a GPU with at least 40GB. All the experiments are conducted on two Nvidia A40 GPUs. (Not required any non-standard hardware)
+To train MU-Diff with the given settings, the system requires a GPU with at least 40GB. All the experiments are conducted on two Nvidia A40 GPUs. (Not required any non-standard hardware)
 To test the model's performance on BraTS and ISLES test data, the system requires a GPU with at least 4 GB. <br />
 ***Installation Guide***  <br />
 Prepare an environment with python>=3.8 and install dependencies
@@ -20,7 +20,7 @@ Prepare an environment with python>=3.8 and install dependencies
 pip install -r requirements.txt
 ```
 ***Installation Time***  <br />
-This depends on the internet connection speed. It would take around 15-30 minutes to create an environment and install all the dependencies required.
+This depends on the internet connection speed. It would take around 20-30 minutes to create an environment and install all the dependencies required.
 
 
 **Dataset Preparation**  <br />
