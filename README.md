@@ -13,7 +13,7 @@ Synthesizing brain MRI lesions poses significant challenges due to the heterogen
 All the experiments of MU-Diff are conducted on Ubuntu 20.04 Focal version with Python 3.8.
 
 To train MU-Diff with the given settings, the system requires a GPU with at least 40GB. All the experiments are conducted on two Nvidia A40 GPUs. (Not required any non-standard hardware)
-To test the model's performance on BraTS and ISLES test data, the system requires a GPU with at least 4 GB. <br />
+To test the model's performance on BraTS and ISLES test data, the system requires a GPU with at least 4 GB. <br />  <br />
 ***Installation Guide***  <br />
 Prepare an environment with python>=3.8 and install dependencies
 ```
