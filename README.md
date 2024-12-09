@@ -40,17 +40,17 @@ data/
 │   │   ├── T1.npy
 │   │   └── T2.npy
 │   │   └── FLAIR.npy
-│   │   └── T1ce.npy
+│   │   └── T1CE.npy
 │   ├── test/
 │   │   ├── T1.npy
 │   │   └── T2.npy
 │   │   └── FLAIR.npy
-│   │   └── T1ce.npy
+│   │   └── T1CE.npy
 │   ├── val/
 │   │   ├── T1.npy
 │   │   └── T2.npy
 │   │   └── FLAIR.npy
-│   │   └── T1ce.npy
+│   │   └── T1CE.npy
 ```
 
 **Figshare Project**  <br />
