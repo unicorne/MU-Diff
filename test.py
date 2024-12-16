@@ -263,7 +263,7 @@ def sample_and_test(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('syndiff parameters')
+    parser = argparse.ArgumentParser('mudiff parameters')
     parser.add_argument('--seed', type=int, default=1024,
                         help='seed used for initialization')
     parser.add_argument('--compute_fid', action='store_true', default=False,

@@ -227,7 +227,7 @@ def uncer_loss(mean, var, label):
 
 
 # %%
-def train_syndiff(rank, gpu, args):
+def train_mudiff(rank, gpu, args):
     from backbones.discriminator import Discriminator_large
 
     from backbones.ncsnpp_generator_adagn_feat import NCSNpp
@@ -318,9 +318,8 @@ def train_syndiff(rank, gpu, args):
     disc_diffusive_2 = nn.parallel.DistributedDataParallel(disc_diffusive_2, device_ids=[gpu])
 
     exp = args.exp
-    output_path = '/data/shew0029/MedSyn/VQGAN_3D/SynDiff-multi/SynDiff-main/results'
 
-    # output_path = args.output_path
+    output_path = args.output_path
 
     exp_path = os.path.join(output_path, exp)
     if rank == 0:
@@ -612,7 +611,7 @@ def cleanup():
 
 # %%
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('syndiff parameters')
+    parser = argparse.ArgumentParser('mudiff parameters')
     parser.add_argument('--seed', type=int, default=1024,
                         help='seed used for initialization')
 
@@ -669,8 +668,8 @@ if __name__ == '__main__':
 
     # geenrator and training
     parser.add_argument('--exp', default='ixi_synth', help='name of experiment')
-    parser.add_argument('--input_path', help='/data/shew0029/MedSyn/DATA/BRATS/')
-    parser.add_argument('--output_path', help='/data/shew0029/MedSyn/VQGAN_3D/SynDiff-multi/SynDiff-main/results')
+    parser.add_argument('--input_path', help='/data/BRATS/')
+    parser.add_argument('--output_path', help='/results')
     parser.add_argument('--nz', type=int, default=100)
     parser.add_argument('--num_timesteps', type=int, default=4)
 
@@ -734,7 +733,7 @@ if __name__ == '__main__':
             global_size = args.num_proc_node * args.num_process_per_node
             args.global_rank = global_rank
             print('Node rank %d, local proc %d, global proc %d' % (args.node_rank, rank, global_rank))
-            p = Process(target=init_processes, args=(global_rank, global_size, train_syndiff, args))
+            p = Process(target=init_processes, args=(global_rank, global_size, train_mudiff, args))
             p.start()
             processes.append(p)
 
@@ -742,4 +741,4 @@ if __name__ == '__main__':
             p.join()
     else:
 
-        init_processes(0, size, train_syndiff, args)
+        init_processes(0, size, train_mudiff, args)
