@@ -668,8 +668,8 @@ if __name__ == '__main__':
 
     # geenrator and training
     parser.add_argument('--exp', default='ixi_synth', help='name of experiment')
-    parser.add_argument('--input_path', help='/data/BRATS/')
-    parser.add_argument('--output_path', help='/results')
+    parser.add_argument('--input_path', default='/data/BRATS/')
+    parser.add_argument('--output_path', default='/results')
     parser.add_argument('--nz', type=int, default=100)
     parser.add_argument('--num_timesteps', type=int, default=4)
 
