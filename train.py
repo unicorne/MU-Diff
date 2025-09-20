@@ -1,3 +1,8 @@
+import sys
+path_to_pip_installs = "/tmp/test_env"
+if path_to_pip_installs not in sys.path:
+    sys.path.insert(0, path_to_pip_installs)
+
 import argparse
 import torch
 import numpy as np
@@ -11,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
-from dataset_brats import CreateDatasetSynthesis
+from dataset_dixon import CreateDatasetSynthesis
 
 from torch.multiprocessing import Process
 import torch.distributed as dist
@@ -669,7 +674,7 @@ if __name__ == '__main__':
     # geenrator and training
     parser.add_argument('--exp', default='ixi_synth', help='name of experiment')
     parser.add_argument('--input_path', default='/data/BRATS/')
-    parser.add_argument('--output_path', default='/results')
+    parser.add_argument('--output_path', default='results')
     parser.add_argument('--nz', type=int, default=100)
     parser.add_argument('--num_timesteps', type=int, default=4)
 
@@ -723,6 +728,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.world_size = args.num_proc_node * args.num_process_per_node
+    print("World size: {}".format(args.world_size))
     size = args.num_process_per_node
 
     if size > 1:
