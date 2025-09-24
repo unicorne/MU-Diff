@@ -21,6 +21,22 @@ def CreateDatasetSynthesis(phase, input_path):
     dataset = torch.utils.data.TensorDataset( torch.from_numpy(data_fs_s1), torch.from_numpy(data_fs_s2), torch.from_numpy(data_fs_s3), torch.from_numpy(data_fs_s4))
     return dataset
 
+def CreateDatasetSynthesis_masks(phase, input_path):
+    cond_data1 = input_path +"/"+ phase + "/BOLD_masks.npy"
+    data_fs_s1 = LoadDataSet(cond_data1)
+
+    cond_data2 = input_path +"/"+ phase + "/Diffusion_masks.npy"
+    data_fs_s2 = LoadDataSet(cond_data2)
+
+    cond_data3 = input_path +"/"+ phase + "/T1_mapping_fl2d_masks.npy"
+    data_fs_s3 = LoadDataSet(cond_data3)
+
+    target_data = input_path +"/"+ phase + "/DIXON_masks.npy"
+    data_fs_s4 = LoadDataSet(target_data)
+
+    dataset = torch.utils.data.TensorDataset( torch.from_numpy(data_fs_s1), torch.from_numpy(data_fs_s2), torch.from_numpy(data_fs_s3), torch.from_numpy(data_fs_s4))
+    return dataset
+
 
 def LoadDataSet(load_dir, padding=True, Norm=True):
 

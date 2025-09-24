@@ -3,232 +3,41 @@ path_to_pip_installs = "/tmp/test_env"
 if path_to_pip_installs not in sys.path:
     sys.path.insert(0, path_to_pip_installs)
 
-import argparse
-import torch
-import numpy as np
-
 import os
+import shutil
+import socket
+import time
 
-from backbones.dense_layer import conv2d
-
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
+import numpy as np
+import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
-from dataset_dixon import CreateDatasetSynthesis
+from dotenv import load_dotenv
+from skimage.metrics import peak_signal_noise_ratio as psnr
+import wandb
 
 from torch.multiprocessing import Process
-import torch.distributed as dist
-import shutil
-from skimage.metrics import peak_signal_noise_ratio as psnr
 
+from backbones.dense_layer import conv2d
+from dataset_dixon import CreateDatasetSynthesis
+from train_utils import (
+    parse_arguments,
+    copy_source,
+    broadcast_params,
+    get_time_schedule,
+    _var_func_vp,
+    _psnr_torch,
+    _wandb_log,
+    q_sample_pairs,
+    sample_posterior,
+    sample_from_model,
+    Diffusion_Coefficients,
+    Posterior_Coefficients,
+)
 
-def copy_source(file, output_dir):
-    shutil.copyfile(file, os.path.join(output_dir, os.path.basename(file)))
-
-
-def broadcast_params(params):
-    for param in params:
-        dist.broadcast(param.data, src=0)
-
-
-# %% Diffusion coefficients
-def var_func_vp(t, beta_min, beta_max):
-    log_mean_coeff = -0.25 * t ** 2 * (beta_max - beta_min) - 0.5 * t * beta_min
-    var = 1. - torch.exp(2. * log_mean_coeff)
-    return var
-
-
-def var_func_geometric(t, beta_min, beta_max):
-    return beta_min * ((beta_max / beta_min) ** t)
-
-
-def extract(input, t, shape):
-    out = torch.gather(input, 0, t)
-    reshape = [shape[0]] + [1] * (len(shape) - 1)
-    out = out.reshape(*reshape)
-
-    return out
-
-
-def get_time_schedule(args, device):
-    n_timestep = args.num_timesteps
-    eps_small = 1e-3
-    t = np.arange(0, n_timestep + 1, dtype=np.float64)
-    t = t / n_timestep
-    t = torch.from_numpy(t) * (1. - eps_small) + eps_small
-    return t.to(device)
-
-
-def get_sigma_schedule(args, device):
-    n_timestep = args.num_timesteps
-    beta_min = args.beta_min
-    beta_max = args.beta_max
-    eps_small = 1e-3
-
-    t = np.arange(0, n_timestep + 1, dtype=np.float64)
-    t = t / n_timestep
-    t = torch.from_numpy(t) * (1. - eps_small) + eps_small
-
-    if args.use_geometric:
-        var = var_func_geometric(t, beta_min, beta_max)
-    else:
-        var = var_func_vp(t, beta_min, beta_max)
-    alpha_bars = 1.0 - var
-    betas = 1 - alpha_bars[1:] / alpha_bars[:-1]
-
-    first = torch.tensor(1e-8)
-    betas = torch.cat((first[None], betas)).to(device)
-    betas = betas.type(torch.float32)
-    sigmas = betas ** 0.5
-    a_s = torch.sqrt(1 - betas)
-    return sigmas, a_s, betas
-
-
-class Diffusion_Coefficients():
-    def __init__(self, args, device):
-        self.sigmas, self.a_s, _ = get_sigma_schedule(args, device=device)
-        self.a_s_cum = np.cumprod(self.a_s.cpu())
-        self.sigmas_cum = np.sqrt(1 - self.a_s_cum ** 2)
-        self.a_s_prev = self.a_s.clone()
-        self.a_s_prev[-1] = 1
-
-        self.a_s_cum = self.a_s_cum.to(device)
-        self.sigmas_cum = self.sigmas_cum.to(device)
-        self.a_s_prev = self.a_s_prev.to(device)
-
-
-def q_sample(coeff, x_start, t, *, noise=None):
-    """
-    Diffuse the data (t == 0 means diffused for t step)
-    """
-    if noise is None:
-        noise = torch.randn_like(x_start)
-
-    x_t = extract(coeff.a_s_cum, t, x_start.shape) * x_start + \
-          extract(coeff.sigmas_cum, t, x_start.shape) * noise
-
-    return x_t
-
-
-def q_sample_pairs(coeff, x_start, t):
-    """
-    Generate a pair of disturbed images for training
-    :param x_start: x_0
-    :param t: time step t
-    :return: x_t, x_{t+1}
-    """
-    noise = torch.randn_like(x_start)
-    x_t = q_sample(coeff, x_start, t)
-    x_t_plus_one = extract(coeff.a_s, t + 1, x_start.shape) * x_t + \
-                   extract(coeff.sigmas, t + 1, x_start.shape) * noise
-
-    return x_t, x_t_plus_one
-
-
-# %% posterior sampling
-class Posterior_Coefficients():
-    def __init__(self, args, device):
-        _, _, self.betas = get_sigma_schedule(args, device=device)
-
-        # we don't need the zeros
-        self.betas = self.betas.type(torch.float32)[1:]
-
-        self.alphas = 1 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, 0)
-        self.alphas_cumprod_prev = torch.cat(
-            (torch.tensor([1.], dtype=torch.float32, device=device), self.alphas_cumprod[:-1]), 0
-        )
-        self.posterior_variance = self.betas * (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod)
-
-        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_recip_alphas_cumprod = torch.rsqrt(self.alphas_cumprod)
-        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1 / self.alphas_cumprod - 1)
-
-        self.posterior_mean_coef1 = (self.betas * torch.sqrt(self.alphas_cumprod_prev) / (1 - self.alphas_cumprod))
-        self.posterior_mean_coef2 = (
-                (1 - self.alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1 - self.alphas_cumprod))
-
-        self.posterior_log_variance_clipped = torch.log(self.posterior_variance.clamp(min=1e-20))
-
-
-def sample_posterior(coefficients, x_0, x_t, t):
-    def q_posterior(x_0, x_t, t):
-        mean = (
-                extract(coefficients.posterior_mean_coef1, t, x_t.shape) * x_0
-                + extract(coefficients.posterior_mean_coef2, t, x_t.shape) * x_t
-        )
-        var = extract(coefficients.posterior_variance, t, x_t.shape)
-        log_var_clipped = extract(coefficients.posterior_log_variance_clipped, t, x_t.shape)
-        return mean, var, log_var_clipped
-
-    def p_sample(x_0, x_t, t):
-        mean, _, log_var = q_posterior(x_0, x_t, t)
-
-        noise = torch.randn_like(x_t)
-
-        nonzero_mask = (1 - (t == 0).type(torch.float32))
-
-        return mean + nonzero_mask[:, None, None, None] * torch.exp(0.5 * log_var) * noise
-
-    sample_x_pos = p_sample(x_0, x_t, t)
-
-    return sample_x_pos
-
-
-def sample_posterior_combine(coefficients, x_0_1, x_0_2, x_t, t):
-    def q_posterior(x_0_1, x_0_2, x_t, t):
-        mean1 = (
-                extract(coefficients.posterior_mean_coef1, t, x_t.shape) * x_0_1
-                + extract(coefficients.posterior_mean_coef2, t, x_t.shape) * x_t
-        )
-        mean2 = (
-                extract(coefficients.posterior_mean_coef1, t, x_t.shape) * x_0_2
-                + extract(coefficients.posterior_mean_coef2, t, x_t.shape) * x_t
-        )
-        mean = (mean1 + mean2) / 2
-        var = extract(coefficients.posterior_variance, t, x_t.shape)
-        log_var_clipped = extract(coefficients.posterior_log_variance_clipped, t, x_t.shape)
-        return mean, var, log_var_clipped
-
-    def p_sample(x_0_1, x_0_2, x_t, t):
-        mean, _, log_var = q_posterior(x_0_1, x_0_2, x_t, t)
-
-        noise = torch.randn_like(x_t)
-
-        nonzero_mask = (1 - (t == 0).type(torch.float32))
-
-        return mean + nonzero_mask[:, None, None, None] * torch.exp(0.5 * log_var) * noise
-
-    sample_x_pos = p_sample(x_0_1, x_0_2, x_t, t)
-
-    return sample_x_pos
-
-
-def sample_from_model(coefficients, generator1, cond1, generator2, cond2, cond3, n_time, x_init, T, opt):
-    x = x_init
-
-    with torch.no_grad():
-        for i in reversed(range(n_time)):
-            t = torch.full((x.size(0),), i, dtype=torch.int64).to(x.device)
-
-            t_time = t
-            latent_z = torch.randn(x.size(0), opt.nz, device=x.device)  # .to(x.device)
-            x_0_1 = generator1(x, cond1, cond2, cond3, t_time, latent_z)
-            x_0_2 = generator2(x, cond1, cond2, cond3, t_time, latent_z, x_0_1[:, [0], :])
-
-            x_new = sample_posterior_combine(coefficients, x_0_1[:, [0], :], x_0_2[:, [0], :], x, t)
-            x = x_new.detach()
-
-    return x
-
-
-def uncer_loss(mean, var, label):
-    loss1 = torch.mul(torch.exp(-var), (mean - label) ** 2)
-    loss2 = var
-    loss = .5 * (loss1 + loss2)
-    return loss.mean()
 
 
 # %%
@@ -247,8 +56,29 @@ def train_mudiff(rank, gpu, args):
     torch.cuda.manual_seed_all(args.seed + rank)
     device = torch.device('cuda:{}'.format(gpu))
 
-    batch_size = args.batch_size
+    # ------------------ W&B init (only on rank 0) ------------------
+    is_master = (rank == 0)
+    if is_master:
+        load_dotenv()  # read .env
+        api_key = os.getenv("WANDB_API_KEY", "")
+        if api_key:
+            try:
+                wandb.login(key=api_key)
+            except Exception:
+                pass
+        else:
+            os.environ["WANDB_MODE"] = os.environ.get("WANDB_MODE", "offline")
+        run_name = f"{args.exp}-rank0-{time.strftime('%Y%m%d-%H%M%S')}"
+        wandb.init(
+            project=os.environ.get("WANDB_PROJECT", "mudiff"),
+            name=run_name,
+            config=vars(args),
+            tags=["train", "DDP"],
+            notes=f"Host: {socket.gethostname()}",
+        )
+    # ---------------------------------------------------------------
 
+    batch_size = args.batch_size
     nz = args.nz  # latent dimension
 
     dataset = CreateDatasetSynthesis(phase="train", input_path=args.input_path)
@@ -277,8 +107,9 @@ def train_mudiff(rank, gpu, args):
 
     val_l1_loss = np.zeros([2, args.num_epoch, len(data_loader_val)])
     val_psnr_values = np.zeros([2, args.num_epoch, len(data_loader_val)])
-    print('train data size:' + str(len(data_loader)))
-    print('val data size:' + str(len(data_loader_val)))
+    if is_master:
+        print('train data size:' + str(len(data_loader)))
+        print('val data size:' + str(len(data_loader)))
     to_range_0_1 = lambda x: (x + 1.) / 2.
     critic_criterian = nn.BCEWithLogitsLoss(reduction='none')
 
@@ -359,10 +190,30 @@ def train_mudiff(rank, gpu, args):
         scheduler_disc_diffusive_2.load_state_dict(checkpoint['scheduler_disc_diffusive_2'])
 
         global_step = checkpoint['global_step']
-        print("=> loaded checkpoint (epoch {})"
-              .format(checkpoint['epoch']))
+        if is_master:
+            print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
     else:
         global_step, epoch, init_epoch = 0, 0, 0
+
+    # --- small helper to log a panel of images to W&B (master only)
+    def _log_images(tag, cond1, cond2, cond3, pred1, pred2, gt, step):
+        if not is_master:
+            return
+        try:
+            # build a horizontal strip: cond1 | cond2 | cond3 | pred1 | pred2 | gt
+            # clamp to [0,1] for nicer viewing
+            panel = torch.cat([
+                torch.clamp((cond1 + 1) / 2, 0, 1),
+                torch.clamp((cond2 + 1) / 2, 0, 1),
+                torch.clamp((cond3 + 1) / 2, 0, 1),
+                torch.clamp((pred1 + 1) / 2, 0, 1),
+                torch.clamp((pred2 + 1) / 2, 0, 1),
+                torch.clamp((gt + 1) / 2, 0, 1),
+            ], dim=-1)
+            grid = torchvision.utils.make_grid(panel, nrow=1, normalize=False)
+            wandb.log({tag: wandb.Image(grid.cpu(), caption="cond1|cond2|cond3|pred_g1|pred_g2|gt")}, step=step)
+        except Exception:
+            pass
 
     for epoch in range(init_epoch, args.num_epoch + 1):
         # train_sampler.set_epoch(epoch)
@@ -443,6 +294,16 @@ def train_mudiff(rank, gpu, args):
 
             optimizer_disc_diffusive_2.step()
 
+            # --- log D losses (master only)
+            if is_master:
+                _wandb_log({
+                    "loss/D/real": errD_real2,
+                    "loss/D/fake_g1": errD2_fake2_g1,
+                    "loss/D/fake_g2": errD2_fake2_g2,
+                    "loss/D/total": errD_real2 + errD2_fake2_g1 + errD2_fake2_g2,
+                    "lr/D": optimizer_disc_diffusive_2.param_groups[0]["lr"],
+                }, step=global_step)
+
             for p in disc_diffusive_2.parameters():
                 p.requires_grad = False
 
@@ -507,11 +368,49 @@ def train_mudiff(rank, gpu, args):
             optimizer_gen_diffusive_1.step()
             optimizer_gen_diffusive_2.step()
 
+            # --- compute & log train PSNR/L1 (on predicted x0 vs GT), master only
+            if is_master:
+                # bring to [0,1] for PSNR stability
+                pred1_01 = torch.clamp(to_range_0_1(x2_0_predict_diff_g1[:, [0], :].detach()), 0, 1)
+                pred2_01 = torch.clamp(to_range_0_1(x2_0_predict_diff_g2[:, [0], :].detach()), 0, 1)
+                gt_01    = torch.clamp(to_range_0_1(real_data.detach()), 0, 1)
+
+                psnr_g1 = _psnr_torch(pred1_01, gt_01)
+                psnr_g2 = _psnr_torch(pred2_01, gt_01)
+                l1_g1   = F.l1_loss(pred1_01, gt_01).item()
+                l1_g2   = F.l1_loss(pred2_01, gt_01).item()
+
+                _wandb_log({
+                    "loss/G/adv_g1": errG2,
+                    "loss/G/adv_g2": errG4,
+                    "loss/G/adv_total": errG_adv,
+                    "loss/G/L1_g1": errG1_2_L1,
+                    "loss/G/L1_g2": errG2_2_L1,
+                    "loss/G/L1_total": errG_L1,
+                    "loss/G/mask": mask_loss,
+                    "loss/G/total": errG,
+                    "metric/train/psnr_g1": psnr_g1,
+                    "metric/train/psnr_g2": psnr_g2,
+                    "metric/train/l1_g1": l1_g1,
+                    "metric/train/l1_g2": l1_g2,
+                    "lr/G1": optimizer_gen_diffusive_1.param_groups[0]["lr"],
+                    "lr/G2": optimizer_gen_diffusive_2.param_groups[0]["lr"],
+                }, step=global_step)
+
             global_step += 1
             if iteration % 100 == 0:
                 if rank == 0:
                     print('epoch {} iteration{},  G-Adv: {}, G-Sum: {}'.format(epoch, iteration,
                                                                                errG_adv.item(), errG.item()))
+                    # also push a quick image strip
+                    _log_images("train/strip",
+                                cond_data1[:1].detach(),
+                                cond_data2[:1].detach(),
+                                cond_data3[:1].detach(),
+                                x2_0_predict_diff_g1[:1, :1].detach(),
+                                x2_0_predict_diff_g2[:1, :1].detach(),
+                                real_data[:1].detach(),
+                                step=global_step)
 
         if not args.no_lr_decay:
             scheduler_gen_diffusive_1.step()
@@ -527,6 +426,21 @@ def train_mudiff(rank, gpu, args):
                 torchvision.utils.save_image(x2_pos_sample_g2,
                                              os.path.join(exp_path, 'xposg2_epoch_{}.png'.format(epoch)),
                                              normalize=True)
+                # log these to W&B too
+                try:
+                    wandb.log({
+                        "train/xpos_g1": wandb.Image(
+                            torchvision.utils.make_grid(x2_pos_sample_g1, normalize=True).cpu(),
+                            caption=f"xpos_g1 epoch {epoch}"
+                        ),
+                        "train/xpos_g2": wandb.Image(
+                            torchvision.utils.make_grid(x2_pos_sample_g2, normalize=True).cpu(),
+                            caption=f"xpos_g2 epoch {epoch}"
+                        ),
+                    }, step=global_step)
+                except Exception:
+                    pass
+
             # concatenate noise and source contrast
             x2_t = torch.randn_like(real_data)
             fake_sample = sample_from_model(pos_coeff, gen_diffusive_1, cond_data1, gen_diffusive_2, cond_data2,
@@ -538,6 +452,17 @@ def train_mudiff(rank, gpu, args):
             torchvision.utils.save_image(fake_sample,
                                          os.path.join(exp_path, 'sample_discrete_epoch_{}.png'.format(epoch)),
                                          normalize=True)
+
+            # also log a sample panel
+            try:
+                wandb.log({
+                    "train/sample_discrete": wandb.Image(
+                        torchvision.utils.make_grid(fake_sample, normalize=True).cpu(),
+                        caption=f"sample_discrete epoch {epoch}"
+                    )
+                }, step=global_step)
+            except Exception:
+                pass
 
             if args.save_content:
                 if epoch % args.save_content_every == 0:
@@ -568,6 +493,7 @@ def train_mudiff(rank, gpu, args):
                     optimizer_gen_diffusive_1.swap_parameters_with_ema(store_params_in_ema=True)
                     optimizer_gen_diffusive_2.swap_parameters_with_ema(store_params_in_ema=True)
 
+        # ---------------- Validation loop (per-epoch) ----------------
         for iteration, (x1_val, x2_val, x3_val, x4_val) in enumerate(data_loader_val):
             cond_data1_val = x1_val.to(device, non_blocking=True)
             cond_data2_val = x2_val.to(device, non_blocking=True)
@@ -582,20 +508,39 @@ def train_mudiff(rank, gpu, args):
                                                 args.num_timesteps, x_t, T, args)
 
             # diffusion steps
-            fake_sample_val = to_range_0_1(fake_sample_val);
+            fake_sample_val = to_range_0_1(fake_sample_val)
             fake_sample_val = fake_sample_val / fake_sample_val.mean()
-            real_data_val = to_range_0_1(real_data_val);
+            real_data_val = to_range_0_1(real_data_val)
             real_data_val = real_data_val / real_data_val.mean()
 
-            fake_sample_val = fake_sample_val.cpu().numpy()
-            real_data_val = real_data_val.cpu().numpy()
-            val_l1_loss[0, epoch, iteration] = abs(fake_sample_val - real_data_val).mean()
+            fake_sample_val_np = fake_sample_val.detach().cpu().numpy()
+            real_data_val_np = real_data_val.detach().cpu().numpy()
+            val_l1_loss[0, epoch, iteration] = abs(fake_sample_val_np - real_data_val_np).mean()
 
-            val_psnr_values[0, epoch, iteration] = psnr(real_data_val, fake_sample_val, data_range=real_data_val.max())
+            val_psnr_values[0, epoch, iteration] = psnr(real_data_val_np, fake_sample_val_np, data_range=real_data_val_np.max())
 
-        print(np.nanmean(val_psnr_values[0, epoch, :]))
+        # reduce/log val metrics (master only)
+        val_psnr_mean = float(np.nanmean(val_psnr_values[0, epoch, :]))
+        val_l1_mean = float(np.nanmean(val_l1_loss[0, epoch, :]))
+        if is_master:
+            print(val_psnr_mean)
+            print(val_l1_mean)
+            _wandb_log({
+                "metric/val/psnr_mean": val_psnr_mean,
+                "metric/val/l1_mean": val_l1_mean,
+                "epoch": epoch,
+            }, step=global_step)
+
         np.save('{}/val_l1_loss.npy'.format(exp_path), val_l1_loss)
         np.save('{}/val_psnr_values.npy'.format(exp_path), val_psnr_values)
+        # -------------------------------------------------------------
+
+    # finish W&B
+    if is_master:
+        try:
+            wandb.finish()
+        except Exception:
+            pass
 
 
 def init_processes(rank, size, fn, args):
@@ -616,121 +561,7 @@ def cleanup():
 
 # %%
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('mudiff parameters')
-    parser.add_argument('--seed', type=int, default=1024,
-                        help='seed used for initialization')
-
-    parser.add_argument('--resume', action='store_true', default=False)
-
-    parser.add_argument('--image_size', type=int, default=32,
-                        help='size of image')
-    parser.add_argument('--num_channels', type=int, default=3,
-                        help='channel of image')
-    parser.add_argument('--centered', action='store_false', default=True,
-                        help='-1,1 scale')
-    parser.add_argument('--use_geometric', action='store_true', default=False)
-    parser.add_argument('--beta_min', type=float, default=0.1,
-                        help='beta_min for diffusion')
-    parser.add_argument('--beta_max', type=float, default=20.,
-                        help='beta_max for diffusion')
-
-    parser.add_argument('--num_channels_dae', type=int, default=128,
-                        help='number of initial channels in denosing model')
-    parser.add_argument('--n_mlp', type=int, default=3,
-                        help='number of mlp layers for z')
-    parser.add_argument('--ch_mult', nargs='+', type=int,
-                        help='channel multiplier')
-    parser.add_argument('--num_res_blocks', type=int, default=2,
-                        help='number of resnet blocks per scale')
-    parser.add_argument('--attn_resolutions', default=(16,),
-                        help='resolution of applying attention')
-    parser.add_argument('--dropout', type=float, default=0.,
-                        help='drop-out rate')
-    parser.add_argument('--resamp_with_conv', action='store_false', default=True,
-                        help='always up/down sampling with conv')
-    parser.add_argument('--conditional', action='store_false', default=True,
-                        help='noise conditional')
-    parser.add_argument('--fir', action='store_false', default=True,
-                        help='FIR')
-    parser.add_argument('--fir_kernel', default=[1, 3, 3, 1],
-                        help='FIR kernel')
-    parser.add_argument('--skip_rescale', action='store_false', default=True,
-                        help='skip rescale')
-    parser.add_argument('--resblock_type', default='biggan',
-                        help='tyle of resnet block, choice in biggan and ddpm')
-    parser.add_argument('--progressive', type=str, default='none', choices=['none', 'output_skip', 'residual'],
-                        help='progressive type for output')
-    parser.add_argument('--progressive_input', type=str, default='residual', choices=['none', 'input_skip', 'residual'],
-                        help='progressive type for input')
-    parser.add_argument('--progressive_combine', type=str, default='sum', choices=['sum', 'cat'],
-                        help='progressive combine method.')
-
-    parser.add_argument('--embedding_type', type=str, default='positional', choices=['positional', 'fourier'],
-                        help='type of time embedding')
-    parser.add_argument('--fourier_scale', type=float, default=16.,
-                        help='scale of fourier transform')
-    parser.add_argument('--not_use_tanh', action='store_true', default=False)
-
-    # geenrator and training
-    parser.add_argument('--exp', default='ixi_synth', help='name of experiment')
-    parser.add_argument('--input_path', default='/data/BRATS/')
-    parser.add_argument('--output_path', default='results')
-    parser.add_argument('--nz', type=int, default=100)
-    parser.add_argument('--num_timesteps', type=int, default=4)
-
-    parser.add_argument('--z_emb_dim', type=int, default=256)
-    parser.add_argument('--t_emb_dim', type=int, default=256)
-    parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
-    parser.add_argument('--num_epoch', type=int, default=1200)
-    parser.add_argument('--ngf', type=int, default=64)
-
-    parser.add_argument('--lr_g', type=float, default=1.5e-4, help='learning rate g')
-    parser.add_argument('--lr_d', type=float, default=1e-4, help='learning rate d')
-    parser.add_argument('--beta1', type=float, default=0.5,
-                        help='beta1 for adam')
-    parser.add_argument('--beta2', type=float, default=0.9,
-                        help='beta2 for adam')
-    parser.add_argument('--no_lr_decay', action='store_true', default=False)
-
-    parser.add_argument('--use_ema', action='store_true', default=False,
-                        help='use EMA or not')
-    parser.add_argument('--ema_decay', type=float, default=0.9999, help='decay rate for EMA')
-
-    parser.add_argument('--r1_gamma', type=float, default=0.05, help='coef for r1 reg')
-    parser.add_argument('--lazy_reg', type=int, default=None,
-                        help='lazy regulariation.')
-
-    parser.add_argument('--save_content', action='store_true', default=True)
-    parser.add_argument('--save_content_every', type=int, default=1, help='save content for resuming every x epochs')
-    parser.add_argument('--save_ckpt_every', type=int, default=10, help='save ckpt every x epochs')
-    parser.add_argument('--lambda_l1_loss', type=float, default=0.5,
-                        help='weightening of l1 loss part of diffusion ans cycle models')
-    parser.add_argument('--lambda_mask_loss', type=float, default=0.1,
-                        help='weightening of l1 loss part of diffusion ans cycle models')
-
-    ###ddp
-    parser.add_argument('--num_proc_node', type=int, default=1,
-                        help='The number of nodes in multi node env.')
-    parser.add_argument('--num_process_per_node', type=int, default=1,
-                        help='number of gpus')
-    parser.add_argument('--node_rank', type=int, default=0,
-                        help='The index of node.')
-    parser.add_argument('--local_rank', type=int, default=0,
-                        help='rank of process in the node')
-    parser.add_argument('--master_address', type=str, default='127.0.0.1',
-                        help='address for master')
-    parser.add_argument('--contrast1', type=str, default='T1',
-                        help='contrast selection for model')
-    parser.add_argument('--contrast2', type=str, default='T2',
-                        help='contrast selection for model')
-    parser.add_argument('--port_num', type=str, default='6021',
-                        help='port selection for code')
-
-    args = parser.parse_args()
-    args.world_size = args.num_proc_node * args.num_process_per_node
-    print("World size: {}".format(args.world_size))
-    size = args.num_process_per_node
-
+    args, size = parse_arguments()
     if size > 1:
         processes = []
         for rank in range(size):
