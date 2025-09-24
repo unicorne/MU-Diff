@@ -1,3 +1,8 @@
+import sys
+path_to_pip_installs = "/tmp/test_env"
+if path_to_pip_installs not in sys.path:
+    sys.path.insert(0, path_to_pip_installs)
+
 import os
 import numpy as np
 import torchvision
@@ -75,7 +80,7 @@ def visualize_images(real_image, synth_image, mask_image, image_name):
         plt.show()
 def sort_key(image_name):
     # Extract the numerical part from the image name
-    return int(image_name.split('_')[2].split('.')[0])
+    return int(image_name.split('_')[1].split('.')[0])
 def process_images(real_dir, synth_dir, mask_dir, masked_synth_dir):
     min_height = 7  # Minimum height for SSIM calculation
     min_width = 7
@@ -190,11 +195,10 @@ def print_statistics(metric_name, values):
     print(f"{metric_name} - Mean: {mean_value:.4f}, Std: {std_value:.4f}")
 
 # Example usage
-real_images_folder = r'results\t1\real'
-synth_images_folder = r'results\t1\mu-diff'
-masks_folder = r'results\brain_mask'
-masked_synth_dir = r'results\t1\masked_img_save_dir'
-
+real_images_folder = r'predictions/exp_brats2/real'
+synth_images_folder = r'predictions/exp_brats2/synthetic'
+masks_folder = r'predictions/exp_brats2/real_mask'
+masked_synth_dir = r'predictions/exp_brats2/masked_img_save_dir'
 
 
 
