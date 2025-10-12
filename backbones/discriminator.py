@@ -9,9 +9,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from . import up_or_down_sampling
-from . import dense_layer
-from . import layers
+from backbones import up_or_down_sampling
+from backbones import dense_layer
+from backbones import layers
 
 dense = dense_layer.dense
 conv2d = dense_layer.conv2d

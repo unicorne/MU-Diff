@@ -5,3 +5,5 @@ matplotlib
 scipy
 ninja
 dotenv
+git+https://github.com/adalca/neurite.git
+git+https://github.com/voxelmorph/voxelmorph.git

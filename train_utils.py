@@ -14,6 +14,18 @@ import torch.distributed as dist
 import torch.nn.functional as F
 import wandb
 
+def dice_loss(pred, target, smooth=1.):
+    target = (target + 1) / 2.0
+    pred = (pred + 1) / 2.0
+    intersection = (pred * target).sum(dim=(2, 3))
+    union = (pred+target).sum(dim=(2, 3))
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return 1-dice.mean()
+
+def smoothness_loss(flow):
+    dy = torch.abs(flow[:, :, 1:, :] - flow[:, :, :-1, :])
+    dx = torch.abs(flow[:, :, :, 1:] - flow[:, :, :, :-1])
+    return (torch.mean(dx**2) + torch.mean(dy**2)) / 2.0
 
 def copy_source(file, output_dir):
     shutil.copyfile(file, os.path.join(output_dir, os.path.basename(file)))
@@ -334,6 +346,8 @@ def parse_arguments(argv=None, allow_unknown=True):
     parser.add_argument('--save_ckpt_every', type=int, default=10)
     parser.add_argument('--lambda_l1_loss', type=float, default=0.5)
     parser.add_argument('--lambda_mask_loss', type=float, default=0.1)
+    parser.add_argument('--lambda_dice', type=float, default=1.0)
+    parser.add_argument('--lambda_smooth', type=float, default=0.1)
 
     # ddp
     parser.add_argument('--num_proc_node', type=int, default=1)
@@ -344,6 +358,9 @@ def parse_arguments(argv=None, allow_unknown=True):
     parser.add_argument('--contrast1', type=str, default='T1_mapping_fl2d')
     parser.add_argument('--contrast2', type=str, default='DIXON')
     parser.add_argument('--port_num', type=str, default='6021')
+
+    parser.add_argument('--resume_reg_path', type=str, default=None, help='Path to pre-trained registration network checkpoint.')
+    parser.add_argument('--freeze_reg_epochs', type=int, default=0, help='Number of epochs to freeze the registration network when loading from --resume_reg_path.')
 
     # If argv is None:
     #   - in notebooks, default to [] to avoid Jupyter's --f

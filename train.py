@@ -22,13 +22,12 @@ import wandb
 from torch.multiprocessing import Process
 
 from backbones.dense_layer import conv2d
-from dataset_dixon import CreateDatasetSynthesis
+from dataset.dataset_dixon import CreateDatasetSynthesis
 from train_utils import (
     parse_arguments,
     copy_source,
     broadcast_params,
     get_time_schedule,
-    _var_func_vp,
     _psnr_torch,
     _wandb_log,
     q_sample_pairs,
@@ -107,6 +106,8 @@ def train_mudiff(rank, gpu, args):
 
     val_l1_loss = np.zeros([2, args.num_epoch, len(data_loader_val)])
     val_psnr_values = np.zeros([2, args.num_epoch, len(data_loader_val)])
+    val_l1_loss_wmean = np.zeros([2, args.num_epoch, len(data_loader_val)])
+    val_psnr_values_wmean = np.zeros([2, args.num_epoch, len(data_loader_val)])
     if is_master:
         print('train data size:' + str(len(data_loader)))
         print('val data size:' + str(len(data_loader)))
@@ -118,7 +119,9 @@ def train_mudiff(rank, gpu, args):
     gen_diffusive_2 = NCSNpp_adaptive(args).to(device)
 
     args.num_channels = 1
-    att_conv = conv2d(64 * 8, 1, 1, padding=0).cuda()
+    att_conv = conv2d(64 * 8, 1, 1, padding=0).to(device)
+    # NEW
+    optimizer_att = optim.Adam(att_conv.parameters(), lr=args.lr_g, betas=(args.beta1, args.beta2))
 
     disc_diffusive_2 = Discriminator_large(nc=2, ngf=args.ngf,
                                            t_emb_dim=args.t_emb_dim,
@@ -269,15 +272,15 @@ def train_mudiff(rank, gpu, args):
             # train with fake
 
             latent_z2 = torch.randn(batch_size, nz, device=device)
+            with torch.no_grad():
+                x2_0_predict_diff_g1 = gen_diffusive_1(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2)
 
-            x2_0_predict_diff_g1 = gen_diffusive_1(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2)
+                x2_0_predict_diff_g2 = gen_diffusive_2(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2,
+                                                    x2_0_predict_diff_g1[:, [0], :])
 
-            x2_0_predict_diff_g2 = gen_diffusive_2(x2_tp1.detach(), cond_data1, cond_data2, cond_data3, t2, latent_z2,
-                                                   x2_0_predict_diff_g1[:, [0], :])
+                x2_pos_sample_g1 = sample_posterior(pos_coeff, x2_0_predict_diff_g1[:, [0], :], x2_tp1, t2)
 
-            x2_pos_sample_g1 = sample_posterior(pos_coeff, x2_0_predict_diff_g1[:, [0], :], x2_tp1, t2)
-
-            x2_pos_sample_g2 = sample_posterior(pos_coeff, x2_0_predict_diff_g2[:, [0], :], x2_tp1, t2)
+                x2_pos_sample_g2 = sample_posterior(pos_coeff, x2_0_predict_diff_g2[:, [0], :], x2_tp1, t2)
 
             # D output for fake sample x_pos_sample
 
@@ -314,6 +317,8 @@ def train_mudiff(rank, gpu, args):
 
             gen_diffusive_1.zero_grad()
             gen_diffusive_2.zero_grad()
+            # NEW
+            att_conv.zero_grad()
 
             t2 = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
 
@@ -367,6 +372,8 @@ def train_mudiff(rank, gpu, args):
             errG.backward()
             optimizer_gen_diffusive_1.step()
             optimizer_gen_diffusive_2.step()
+            # NEW
+            optimizer_att.step()
 
             # --- compute & log train PSNR/L1 (on predicted x0 vs GT), master only
             if is_master:
@@ -509,15 +516,26 @@ def train_mudiff(rank, gpu, args):
 
             # diffusion steps
             fake_sample_val = to_range_0_1(fake_sample_val)
-            fake_sample_val = fake_sample_val / fake_sample_val.mean()
+            fake_sample_val_div_mean = fake_sample_val / fake_sample_val.mean()
             real_data_val = to_range_0_1(real_data_val)
-            real_data_val = real_data_val / real_data_val.mean()
+            real_data_val_div_mean = real_data_val / real_data_val.mean()
 
-            fake_sample_val_np = fake_sample_val.detach().cpu().numpy()
-            real_data_val_np = real_data_val.detach().cpu().numpy()
+            fake_sample_val_np = fake_sample_val_div_mean.detach().cpu().numpy()
+            real_data_val_np = real_data_val_div_mean.detach().cpu().numpy()
             val_l1_loss[0, epoch, iteration] = abs(fake_sample_val_np - real_data_val_np).mean()
-
             val_psnr_values[0, epoch, iteration] = psnr(real_data_val_np, fake_sample_val_np, data_range=real_data_val_np.max())
+
+            # calcultae withmout mean
+            fake_sample_val_np_wmean = fake_sample_val.detach().cpu().numpy()
+            real_data_val_np_wmean = real_data_val.detach().cpu().numpy()
+            val_l1_loss_wmean[0, epoch, iteration] = abs(fake_sample_val_np_wmean - real_data_val_np_wmean).mean()
+            val_psnr_values_wmean[0, epoch, iteration] = psnr(real_data_val_np_wmean, fake_sample_val_np_wmean, data_range=real_data_val_np_wmean.max())
+
+            # calculate with other psnr function
+            try:
+                other_psnr = _psnr_torch(fake_sample_val, real_data_val)
+            except:
+                other_psnr = -1
 
         # reduce/log val metrics (master only)
         val_psnr_mean = float(np.nanmean(val_psnr_values[0, epoch, :]))
@@ -528,6 +546,9 @@ def train_mudiff(rank, gpu, args):
             _wandb_log({
                 "metric/val/psnr_mean": val_psnr_mean,
                 "metric/val/l1_mean": val_l1_mean,
+                "metric/val/psnr_mean_wmean": float(np.nanmean(val_psnr_values_wmean[0, epoch, :])),
+                "metric/val/l1_mean_wmean": float(np.nanmean(val_l1_loss_wmean[0, epoch, :])),
+                "metric/val/psnr_mean_otherfn": other_psnr,
                 "epoch": epoch,
             }, step=global_step)
 

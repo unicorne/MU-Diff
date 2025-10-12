@@ -3,3 +3,8 @@
 .idea
 .xml
 data/*
+.env
+wandb/*
+results/*
+slurm/*
+predictions/*

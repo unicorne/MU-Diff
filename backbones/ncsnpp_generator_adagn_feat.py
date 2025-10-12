@@ -21,7 +21,7 @@
 ''' Codes adapted from https://github.com/yang-song/score_sde_pytorch/blob/main/models/ncsnpp.py
 '''
 
-from . import utils, layers, layerspp, dense_layer
+from backbones import utils, layers, layerspp, dense_layer
 import torch.nn as nn
 import functools
 import torch
