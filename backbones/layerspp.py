@@ -473,7 +473,7 @@ class ConvBlock_GAP(nn.Module):
         self.adaptive_gap = nn.AdaptiveAvgPool2d(1)  # Output size of (1, 1)
 
         # Fully connected layer
-        self.fc = nn.Linear(64, 256)
+        self.fc = nn.Linear(out_ch, 256)
 
     def forward(self, x):
         # First convolutional layer

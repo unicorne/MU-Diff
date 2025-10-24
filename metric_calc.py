@@ -195,10 +195,10 @@ def print_statistics(metric_name, values):
     print(f"{metric_name} - Mean: {mean_value:.4f}, Std: {std_value:.4f}")
 
 # Example usage
-real_images_folder = r'predictions/exp_brats2/test/real'
-synth_images_folder = r'predictions/exp_brats2/test/synthetic'
-masks_folder = r'predictions/exp_brats2/test/real_mask'
-masked_synth_dir = r'predictions/exp_brats2/test/masked_img_save_dir'
+real_images_folder = r'predictions/data/exp_brats_gen_data3/test/real'
+synth_images_folder = r'predictions/data/exp_brats_gen_data3/test/synthetic'
+masks_folder = r'predictions/data/exp_brats_gen_data3/test/real_mask'
+masked_synth_dir = r'predictions/data/exp_brats_gen_data3/test/masked_img_save_dir'
 
 
 

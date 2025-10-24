@@ -95,6 +95,22 @@ def CreateDatasetSynthesis_single_with_masks(phase, input_path, contrast, target
     dataset = torch.utils.data.TensorDataset( torch.from_numpy(data_fs_s), torch.from_numpy(data_fs_t), torch.from_numpy(data_fs_s_masks), torch.from_numpy(data_fs_t_masks))
     return dataset
 
+def CreateDatasetSynthesis_single_with_masks_affine(phase, input_path1, input_path2, contrast, target_contrast):
+    cond_data = input_path1 +"/"+ phase + "/"+ contrast +".npy"
+    data_fs_s = LoadDataSet(cond_data)
+
+    cond_masks = input_path1 +"/"+ phase + "/"+ contrast +"_masks.npy"
+    data_fs_s_masks = LoadDataSet(cond_masks)
+
+    target_data = input_path2 +"/"+ phase + "/"+ target_contrast +".npy"
+    data_fs_t = LoadDataSet(target_data)
+
+    target_masks = input_path2 +"/"+ phase + "/"+ target_contrast +"_masks.npy"
+    data_fs_t_masks = LoadDataSet(target_masks)
+
+    dataset = torch.utils.data.TensorDataset( torch.from_numpy(data_fs_s), torch.from_numpy(data_fs_t), torch.from_numpy(data_fs_s_masks), torch.from_numpy(data_fs_t_masks))
+    return dataset
+
 def CreateDatasetSynthesis_masks(phase, input_path):
     cond_data1 = input_path +"/"+ phase + "/BOLD_masks.npy"
     data_fs_s1 = LoadDataSet(cond_data1)

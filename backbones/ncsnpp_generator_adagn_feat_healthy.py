@@ -554,7 +554,7 @@ class NCSNpp_adaptive(nn.Module):
                                                act=act, in_ch=config.num_channels
                                                )
             ConvBlock_GAP = functools.partial(ResnetBlock_Feat_GAP,
-                                              act=act, in_ch=config.num_channels
+                                              act=act, in_ch=config.num_channels, out_ch=nf
                                               )
         elif resblock_type == 'biggan_oneadagn':
             ResnetBlock = functools.partial(ResnetBlockBigGAN_one,
