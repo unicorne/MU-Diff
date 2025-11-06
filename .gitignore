@@ -8,3 +8,13 @@ wandb/*
 results/*
 slurm/*
 predictions/*
+synthmorph-torch/mnist_eval_old/*
+synthmorph-torch/mnist_eval/*
+synthmorph-torch/mnist_eval
+synthmorph-torch/mnist_eval_old
+lightning_logs/*
+synthmorph-torch/mnist_eval/**/*.png
+*.png
+hyperdm/*
+guided_diffusion/*
+old/*
