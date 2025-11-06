@@ -5,7 +5,8 @@
 
 try:
     # Keep the original path in case you later add CUDA/ninja
-    from .upfirdn2d import upfirdn2d   # ← will attempt to compile
+    #from .upfirdn2d import upfirdn2d   # ← will attempt to compile
+    from .upfirdn2d_fallback import upfirdn2d
 except Exception:
     # No CUDA_HOME / ninja / nvcc?  Fall back!
     from .upfirdn2d_fallback import upfirdn2d

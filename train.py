@@ -7,6 +7,7 @@ import os
 import shutil
 import socket
 import time
+import importlib
 
 import numpy as np
 import torch
@@ -38,15 +39,22 @@ from train_utils import (
 )
 
 
+def trace_imports(name):
+    start = time.time()
+    print(f"[import] -> {name}", flush=True)
+    m = importlib.import_module(name)
+    print(f"[import] <- {name}  ({time.time()-start:.2f}s)", flush=True)
+    return m
 
 # %%
 def train_mudiff(rank, gpu, args):
-    from backbones.discriminator import Discriminator_large
-
-    from backbones.ncsnpp_generator_adagn_feat import NCSNpp
-    from backbones.ncsnpp_generator_adagn_feat import NCSNpp_adaptive
-
-    from utils.EMA import EMA
+    print(f"Starting training on rank {rank}, GPU {gpu}", flush=True)
+    Discriminator_large = trace_imports("backbones.discriminator").Discriminator_large
+    ncsn = trace_imports("backbones.ncsnpp_generator_adagn_feat")
+    NCSNpp = ncsn.NCSNpp
+    NCSNpp_adaptive = ncsn.NCSNpp_adaptive
+    EMA = trace_imports("utils.EMA").EMA
+    print("Imported models.", flush=True)
 
     # rank = args.node_rank * args.num_process_per_node + gpu
 
@@ -54,10 +62,13 @@ def train_mudiff(rank, gpu, args):
     torch.cuda.manual_seed(args.seed + rank)
     torch.cuda.manual_seed_all(args.seed + rank)
     device = torch.device('cuda:{}'.format(gpu))
+    log_to_wandb = False
+    print(f"Device set to {device} on rank {rank}.")
 
     # ------------------ W&B init (only on rank 0) ------------------
     is_master = (rank == 0)
-    if is_master:
+    print(f"Rank {rank} - is_master: {is_master}")
+    if is_master and log_to_wandb:
         load_dotenv()  # read .env
         api_key = os.getenv("WANDB_API_KEY", "")
         if api_key:
@@ -410,14 +421,15 @@ def train_mudiff(rank, gpu, args):
                     print('epoch {} iteration{},  G-Adv: {}, G-Sum: {}'.format(epoch, iteration,
                                                                                errG_adv.item(), errG.item()))
                     # also push a quick image strip
-                    _log_images("train/strip",
-                                cond_data1[:1].detach(),
-                                cond_data2[:1].detach(),
-                                cond_data3[:1].detach(),
-                                x2_0_predict_diff_g1[:1, :1].detach(),
-                                x2_0_predict_diff_g2[:1, :1].detach(),
-                                real_data[:1].detach(),
-                                step=global_step)
+                    if log_to_wandb:
+                        _log_images("train/strip",
+                                    cond_data1[:1].detach(),
+                                    cond_data2[:1].detach(),
+                                    cond_data3[:1].detach(),
+                                    x2_0_predict_diff_g1[:1, :1].detach(),
+                                    x2_0_predict_diff_g2[:1, :1].detach(),
+                                    real_data[:1].detach(),
+                                    step=global_step)
 
         if not args.no_lr_decay:
             scheduler_gen_diffusive_1.step()
@@ -435,16 +447,17 @@ def train_mudiff(rank, gpu, args):
                                              normalize=True)
                 # log these to W&B too
                 try:
-                    wandb.log({
-                        "train/xpos_g1": wandb.Image(
-                            torchvision.utils.make_grid(x2_pos_sample_g1, normalize=True).cpu(),
-                            caption=f"xpos_g1 epoch {epoch}"
-                        ),
-                        "train/xpos_g2": wandb.Image(
-                            torchvision.utils.make_grid(x2_pos_sample_g2, normalize=True).cpu(),
-                            caption=f"xpos_g2 epoch {epoch}"
-                        ),
-                    }, step=global_step)
+                    if log_to_wandb:
+                        wandb.log({
+                            "train/xpos_g1": wandb.Image(
+                                torchvision.utils.make_grid(x2_pos_sample_g1, normalize=True).cpu(),
+                                caption=f"xpos_g1 epoch {epoch}"
+                            ),
+                            "train/xpos_g2": wandb.Image(
+                                torchvision.utils.make_grid(x2_pos_sample_g2, normalize=True).cpu(),
+                                caption=f"xpos_g2 epoch {epoch}"
+                            ),
+                        }, step=global_step)
                 except Exception:
                     pass
 
@@ -462,12 +475,13 @@ def train_mudiff(rank, gpu, args):
 
             # also log a sample panel
             try:
-                wandb.log({
-                    "train/sample_discrete": wandb.Image(
-                        torchvision.utils.make_grid(fake_sample, normalize=True).cpu(),
-                        caption=f"sample_discrete epoch {epoch}"
-                    )
-                }, step=global_step)
+                if log_to_wandb:
+                    wandb.log({
+                        "train/sample_discrete": wandb.Image(
+                            torchvision.utils.make_grid(fake_sample, normalize=True).cpu(),
+                            caption=f"sample_discrete epoch {epoch}"
+                        )
+                    }, step=global_step)
             except Exception:
                 pass
 
@@ -543,14 +557,15 @@ def train_mudiff(rank, gpu, args):
         if is_master:
             print(val_psnr_mean)
             print(val_l1_mean)
-            _wandb_log({
-                "metric/val/psnr_mean": val_psnr_mean,
-                "metric/val/l1_mean": val_l1_mean,
-                "metric/val/psnr_mean_wmean": float(np.nanmean(val_psnr_values_wmean[0, epoch, :])),
-                "metric/val/l1_mean_wmean": float(np.nanmean(val_l1_loss_wmean[0, epoch, :])),
-                "metric/val/psnr_mean_otherfn": other_psnr,
-                "epoch": epoch,
-            }, step=global_step)
+            if log_to_wandb:
+                _wandb_log({
+                    "metric/val/psnr_mean": val_psnr_mean,
+                    "metric/val/l1_mean": val_l1_mean,
+                    "metric/val/psnr_mean_wmean": float(np.nanmean(val_psnr_values_wmean[0, epoch, :])),
+                    "metric/val/l1_mean_wmean": float(np.nanmean(val_l1_loss_wmean[0, epoch, :])),
+                    "metric/val/psnr_mean_otherfn": other_psnr,
+                    "epoch": epoch,
+                }, step=global_step)
 
         np.save('{}/val_l1_loss.npy'.format(exp_path), val_l1_loss)
         np.save('{}/val_psnr_values.npy'.format(exp_path), val_psnr_values)
@@ -582,6 +597,7 @@ def cleanup():
 
 # %%
 if __name__ == '__main__':
+    print("Starting training script")
     args, size = parse_arguments()
     if size > 1:
         processes = []
@@ -598,5 +614,7 @@ if __name__ == '__main__':
         for p in processes:
             p.join()
     else:
-
+        print("Single process mode")
+        #torch.cuda.set_device(0)
+        #train_mudiff(rank=0, gpu=0, args=args)
         init_processes(0, size, train_mudiff, args)

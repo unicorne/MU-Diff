@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 import numpy as np
-from utils.op import upfirdn2d
+from utils.op import upfirdn2d_fallback as upfirdn2d
 
 
 # Function ported from StyleGAN2
